@@ -6,8 +6,8 @@ import fitz
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.secret_key = "ajuste-foto-boleto-web-v2"
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+app.secret_key = "ajusteboleto-impares-foto-a-foto"
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -15,6 +15,8 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+def allowed_file(filename):
+    return filename.lower().endswith(".pdf")
 
 def ajustar_pdf(input_path, left=5, top=5, right=15, bottom=5, only_meter_images=True):
     base_name = os.path.splitext(os.path.basename(input_path))[0]
@@ -24,7 +26,8 @@ def ajustar_pdf(input_path, left=5, top=5, right=15, bottom=5, only_meter_images
     doc = fitz.open(input_path)
     total_changes = 0
 
-    for page_index in range(len(doc)):
+    # páginas ímpares do PDF: 1,3,5... => índices 0,2,4...
+    for page_index in range(0, len(doc), 2):
         page = doc[page_index]
         images = page.get_images(full=True)
 
@@ -46,9 +49,9 @@ def ajustar_pdf(input_path, left=5, top=5, right=15, bottom=5, only_meter_images
                     continue
 
                 if only_meter_images:
-                    if rect.x0 > page_width * 0.45:
+                    if rect.x0 > page_width * 0.48:
                         continue
-                    if rect.y0 < page_height * 0.10 or rect.y1 > page_height * 0.76:
+                    if rect.y0 < page_height * 0.08 or rect.y1 > page_height * 0.78:
                         continue
 
                 new_rect = fitz.Rect(
@@ -61,10 +64,9 @@ def ajustar_pdf(input_path, left=5, top=5, right=15, bottom=5, only_meter_images
                 if abs(new_rect.width - rect.width) < 3 and abs(new_rect.height - rect.height) < 3:
                     continue
 
-                pix = fitz.Pixmap(doc, xref)
-                page.insert_image(new_rect, pixmap=pix, overlay=True)
+                # usa a MESMA imagem daquela página/posição
+                page.insert_image(new_rect, xref=xref, overlay=True)
                 total_changes += 1
-                pix = None
 
     if total_changes == 0:
         doc.close()
@@ -73,18 +75,22 @@ def ajustar_pdf(input_path, left=5, top=5, right=15, bottom=5, only_meter_images
             "Tente desmarcar a opção de ajustar somente fotos dos hidrômetros."
         )
 
-    doc.save(output_path)
+    doc.save(output_path, garbage=3, deflate=True)
     doc.close()
     return output_path, total_changes
-
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
         try:
             pdf = request.files.get("pdf")
-            if not pdf or not pdf.filename.lower().endswith(".pdf"):
-                flash("Selecione um arquivo PDF válido.")
+
+            if not pdf or not pdf.filename:
+                flash("Selecione um arquivo PDF.")
+                return redirect(url_for("index"))
+
+            if not allowed_file(pdf.filename):
+                flash("Envie somente arquivo PDF.")
                 return redirect(url_for("index"))
 
             left = float(request.form.get("left", 5))
@@ -94,8 +100,8 @@ def index():
             only_meter_images = request.form.get("only_meter_images") == "on"
 
             safe_name = secure_filename(pdf.filename)
-            file_id = uuid.uuid4().hex
-            input_path = os.path.join(UPLOAD_DIR, f"{file_id}_{safe_name}")
+            unique_name = f"{uuid.uuid4().hex}_{safe_name}"
+            input_path = os.path.join(UPLOAD_DIR, unique_name)
             pdf.save(input_path)
 
             output_path, total_changes = ajustar_pdf(
@@ -111,28 +117,27 @@ def index():
                 output_path,
                 as_attachment=True,
                 download_name=os.path.basename(output_path),
-                mimetype="application/pdf"
+                mimetype="application/pdf",
+                max_age=0,
             )
 
         except Exception as e:
-            print("ERRO AO PROCESSAR PDF:")
+            print("ERRO AO PROCESSAR PDF")
             traceback.print_exc()
             flash(f"Erro ao processar PDF: {str(e)}")
             return redirect(url_for("index"))
 
     return render_template("index.html")
 
-
 @app.route("/health")
 def health():
     return {"status": "ok"}
 
-
 @app.errorhandler(413)
-def too_large(e):
-    flash("O PDF é muito grande. Envie um arquivo menor que 50 MB.")
+def too_large(error):
+    flash("O PDF é muito grande. Envie um arquivo menor que 25 MB.")
     return redirect(url_for("index"))
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    port = int(os.environ.get("PORT", "10000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
