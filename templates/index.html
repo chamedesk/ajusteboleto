@@ -10,7 +10,7 @@
   <div class="container">
     <div class="card">
       <h1>ajuste de foto boleto</h1>
-      <p class="subtitle">Envie o PDF e clique uma vez para aumentar as fotos dos hidrômetros sem cobrir as informações do boleto.</p>
+      <p class="subtitle">Ajusta as fotos dos hidrômetros das páginas ímpares, foto por foto, mantendo a foto original de cada boleto.</p>
 
       {% with messages = get_flashed_messages() %}
         {% if messages %}
@@ -53,9 +53,7 @@
         <button type="submit">AJUSTAR PDF</button>
       </form>
 
-      <div class="tip">
-        Padrão recomendado: esquerda 5 | topo 5 | direita 15 | base 5
-      </div>
+      <div class="tip">Essa versão ajusta foto por foto nas páginas ímpares, sem substituir pela foto de outra página.</div>
     </div>
   </div>
 </body>
